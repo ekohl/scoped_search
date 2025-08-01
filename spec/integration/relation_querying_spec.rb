@@ -80,6 +80,55 @@ ScopedSearch::RSpec::Database.test_databases.each do |db|
 
     end
 
+    context 'querying a #belongs_to relation with constraint' do
+      before do
+        # The related class
+        ActiveRecord::Migration.create_table(:rooms) { |t| t.string :name; t.boolean :enabled }
+        class Room < ActiveRecord::Base; has_many :chairs; end
+
+        # The class on which to call search_for
+        ActiveRecord::Migration.create_table(:chairs) { |t| t.string :foo; t.integer :room_id }
+        class Chair < ActiveRecord::Base
+          belongs_to :room, -> { where(enabled: true) }
+          scoped_search :relation => :room, :on => :name, :rename => 'room'
+        end
+
+        @enabled_record = Room.create!(:name => 'good', :enabled => true)
+        @disabled_record = Room.create!(:name => 'bad', :enabled => false)
+
+        Chair.create!(:foo => 'foo', :room => @enabled_record)
+      end
+
+      after do
+        ScopedSearch::RSpec::Database.drop_model(Chair)
+        ScopedSearch::RSpec::Database.drop_model(Room)
+      end
+
+      it do
+        Chair.search_for('good').length.should == 1
+      end
+
+      it do
+        Chair.search_for('bad').length.should == 0
+      end
+
+      it do
+        Chair.search_for('room = good').length.should == 1
+      end
+
+      it do
+        Chair.search_for('room = bad').length.should == 0
+      end
+
+      it do
+        Chair.complete_for('').should eq([' room ', ' not', ' has'])
+      end
+
+      it { Chair.complete_for('r').should eq([' room ']) }
+      it { Chair.complete_for('room').should eq(['room =']) }
+      it { Chair.complete_for('room = ').should eq(['good']) }
+    end
+
     context 'querying a :has_many relation' do
 
       before do
